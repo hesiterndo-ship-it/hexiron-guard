@@ -1,0 +1,16 @@
+.git
+.github
+.env
+.env.*
+*.db
+*.db-wal
+*.db-shm
+backups/
+audio_temp/
+playlists/
+whispers/
+__pycache__/
+*.pyc
+*.pyo
+*.log
+.DS_Store

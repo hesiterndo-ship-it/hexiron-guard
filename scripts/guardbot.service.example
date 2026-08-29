@@ -1,0 +1,16 @@
+[Unit]
+Description=Hexiron Guard Telegram Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=guardbot
+WorkingDirectory=/opt/telegram_guard_bot
+EnvironmentFile=/opt/telegram_guard_bot/.env
+ExecStart=/opt/telegram_guard_bot/venv/bin/python /opt/telegram_guard_bot/main.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
