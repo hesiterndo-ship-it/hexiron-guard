@@ -1,5 +1,12 @@
 {
+  "platform": "docker",
   "build": {
     "location": "germany"
-  }
+  },
+  "disks": [
+    {
+      "name": "data",
+      "mountTo": "/data"
+    }
+  ]
 }

@@ -6,6 +6,7 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackQueryHandler, ContextTypes
 
 import database as db
+from utils.ffmpeg_setup import ensure_ffmpeg
 from config import BOT_TOKEN, PROXY_URL
 from handlers import admin, antispam, general, welcome, dashboard, ticket, force_subscribe, reactions, reports, backup, security, polls, whisper, voicetotext
 
@@ -15,7 +16,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-
+ensure_ffmpeg()
 def build_application() -> Application:
     builder = Application.builder().token(BOT_TOKEN)
     
