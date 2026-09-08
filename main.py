@@ -3,12 +3,12 @@ Telegram Guard Bot - Entry point
 """
 import logging
 from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackQueryHandler, ContextTypes
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackQueryHandler, ContextTypes, ApplicationHandlerStop
 
 import database as db
 from utils.ffmpeg_setup import ensure_ffmpeg
 from config import BOT_TOKEN, PROXY_URL
-from handlers import admin, antispam, general, welcome, dashboard, ticket, force_subscribe, reactions, reports, backup, security, polls, whisper, voicetotext
+from handlers import admin, antispam, general, welcome, dashboard, ticket, force_subscribe, reactions, reports, backup, security, polls, whisper, voicetotext, invite_links
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -105,6 +105,9 @@ def build_application() -> Application:
     
     # ===== تبدیل صدا به متن =====
     voicetotext.register_voicetotext_handlers(app)
+
+    # ===== لینک دعوت با تگ =====
+    invite_links.register_invite_link_handlers(app)
     
     # پنل مدیریت
     app.add_handler(CommandHandler("panel", dashboard.dashboard))
@@ -194,289 +197,327 @@ async def handle_text_commands(update: Update, context: ContextTypes.DEFAULT_TYP
     # ===== دستورات عمومی =====
     if text_lower in ["start", "شروع"]:
         await general.start(update, context)
-        return
+        raise ApplicationHandlerStop
     elif text_lower in ["help", "راهنما"]:
         await general.help_cmd(update, context)
-        return
+        raise ApplicationHandlerStop
     elif text_lower in ["rules", "قوانین"]:
         await general.rules(update, context)
-        return
+        raise ApplicationHandlerStop
     elif text_lower in ["stats", "آمار"]:
         await general.stats(update, context)
-        return
+        raise ApplicationHandlerStop
     elif text_lower in ["mylevel", "امتیاز"]:
         await general.mylevel(update, context)
-        return
+        raise ApplicationHandlerStop
     elif text_lower in ["top", "برترین"]:
         await general.top(update, context)
-        return
+        raise ApplicationHandlerStop
     elif text_lower in ["menu", "منو"]:
         await general.menu(update, context)
-        return
+        raise ApplicationHandlerStop
     elif text_lower in ["panel", "پنل"]:
         await dashboard.dashboard(update, context)
-        return
+        raise ApplicationHandlerStop
     
     # ===== دستورات ادمین (مدیریت کاربران) =====
     elif text_lower in ["warn", "اخطار"]:
         await admin.warn(update, context)
-        return
+        raise ApplicationHandlerStop
     elif text_lower in ["unwarn", "حذف اخطار"]:
         await admin.unwarn(update, context)
-        return
+        raise ApplicationHandlerStop
     elif text_lower in ["mute", "بی صدا"]:
         await admin.mute(update, context)
-        return
+        raise ApplicationHandlerStop
     elif text_lower in ["unmute", "باز کردن صدا"]:
         await admin.unmute(update, context)
-        return
+        raise ApplicationHandlerStop
     elif text_lower in ["kick", "اخراج"]:
         await admin.kick(update, context)
-        return
+        raise ApplicationHandlerStop
     elif text_lower in ["ban", "بن"]:
         await admin.ban(update, context)
-        return
+        raise ApplicationHandlerStop
     elif text_lower in ["unban", "آنبن"]:
         await admin.unban(update, context)
-        return
+        raise ApplicationHandlerStop
     
     # ===== دستورات ادمین (مدیریت گروه) =====
     elif text_lower in ["lock", "قفل"]:
         await admin.lock(update, context)
-        return
+        raise ApplicationHandlerStop
     elif text_lower in ["unlock", "باز کردن"]:
         await admin.unlock(update, context)
-        return
+        raise ApplicationHandlerStop
     elif text_lower in ["pin", "پین"]:
         await admin.pin(update, context)
-        return
+        raise ApplicationHandlerStop
     elif text_lower in ["unpin", "برداشتن پین"]:
         await admin.unpin(update, context)
-        return
+        raise ApplicationHandlerStop
     elif text_lower in ["setwelcome", "خوش آمدگویی"]:
         await admin.setwelcome(update, context)
-        return
+        raise ApplicationHandlerStop
     elif text_lower in ["setgoodbye", "خداحافظی"]:
         await admin.setgoodbye(update, context)
-        return
+        raise ApplicationHandlerStop
     elif text_lower in ["setrules", "قوانین جدید"]:
         await admin.setrules(update, context)
-        return
+        raise ApplicationHandlerStop
     
     # ===== مدیریت کلمات ممنوعه =====
     elif text_lower in ["addbadword", "افزودن کلمه"]:
         await admin.addbadword(update, context)
-        return
+        raise ApplicationHandlerStop
     elif text_lower in ["removebadword", "حذف کلمه"]:
         await admin.removebadword(update, context)
-        return
+        raise ApplicationHandlerStop
     elif text_lower in ["listbadwords", "لیست کلمات"]:
         await admin.listbadwords(update, context)
-        return
+        raise ApplicationHandlerStop
     elif text_lower in ["importbadwords", "ایمپورت"]:
         await admin.import_badwords(update, context)
-        return
+        raise ApplicationHandlerStop
     elif text_lower in ["quicksetup", "نصب سریع", "راه اندازی سریع", "راه‌اندازی سریع"]:
         await admin.quicksetup(update, context)
-        return
+        raise ApplicationHandlerStop
     
     # ===== مدیریت ادمین‌ها =====
     elif text_lower in ["addadmin", "افزودن ادمین"]:
         await admin.addadmin(update, context)
-        return
+        raise ApplicationHandlerStop
     elif text_lower in ["removeadmin", "حذف ادمین"]:
         await admin.removeadmin(update, context)
-        return
+        raise ApplicationHandlerStop
     elif text_lower in ["setlevel", "تنظیم سطح"]:
         await admin.setlevel(update, context)
-        return
+        raise ApplicationHandlerStop
     elif text_lower in ["mypermissions", "دسترسی من"]:
         await admin.mypermissions(update, context)
-        return
+        raise ApplicationHandlerStop
     elif text_lower in ["tagall", "تگ", "تگ همه", "تگ کردن همه"]:
         await admin.tagall(update, context)
-        return
+        raise ApplicationHandlerStop
     elif text_lower in ["aimod", "هوش مصنوعی", "تشخیص هوشمند"]:
         await admin.aimod(update, context)
-        return
+        raise ApplicationHandlerStop
     elif text_lower in ["trustbot", "اعتماد به بات"]:
         await security.trustbot(update, context)
-        return
+        raise ApplicationHandlerStop
     elif text_lower in ["untrustbot", "حذف اعتماد بات"]:
         await security.untrustbot(update, context)
-        return
+        raise ApplicationHandlerStop
     elif text_lower in ["trustedbots", "بات های مورد اعتماد", "بات‌های مورد اعتماد"]:
         await security.trustedbots(update, context)
-        return
+        raise ApplicationHandlerStop
     
     # ===== تیکت =====
     elif text_lower in ["ticket", "تیکت"]:
         await ticket.ticket(update, context)
-        return
+        raise ApplicationHandlerStop
     elif text_lower in ["mytickets", "تیکت های من"]:
         await ticket.mytickets(update, context)
-        return
+        raise ApplicationHandlerStop
     elif text_lower in ["ticketinfo", "جزئیات تیکت"]:
         await ticket.ticketinfo(update, context)
-        return
+        raise ApplicationHandlerStop
     elif text_lower in ["reply", "پاسخ"]:
         await ticket.reply(update, context)
-        return
+        raise ApplicationHandlerStop
     elif text_lower in ["close", "بستن"]:
         await ticket.close(update, context)
-        return
+        raise ApplicationHandlerStop
     elif text_lower in ["tickets", "مدیریت تیکت"]:
         await ticket.tickets(update, context)
-        return
+        raise ApplicationHandlerStop
     
     # ===== عضویت اجباری =====
     elif text_lower in ["setforce", "کانال اجباری"]:
         await force_subscribe.setforce(update, context)
-        return
+        raise ApplicationHandlerStop
     elif text_lower in ["removeforce", "حذف کانال اجباری"]:
         await force_subscribe.removeforce(update, context)
-        return
+        raise ApplicationHandlerStop
     elif text_lower in ["forcelinks", "لینک کانال ها", "لینک کانال‌ها"]:
         await force_subscribe.forcelinks(update, context)
-        return
+        raise ApplicationHandlerStop
     elif text_lower in ["forcestatus", "وضعیت عضویت"]:
         await force_subscribe.force_status(update, context)
-        return
+        raise ApplicationHandlerStop
     
     
     # ===== واکنش‌ها =====
     elif text_lower in ["addreaction", "افزودن واکنش"]:
         await reactions.addreaction(update, context)
-        return
+        raise ApplicationHandlerStop
     elif text_lower in ["removereaction", "حذف واکنش"]:
         await reactions.removereaction(update, context)
-        return
+        raise ApplicationHandlerStop
     elif text_lower in ["listreactions", "لیست واکنش"]:
         await reactions.listreactions(update, context)
-        return
+        raise ApplicationHandlerStop
     
     # ===== گزارشات =====
     elif text_lower in ["dailyreport", "گزارش روزانه"]:
         await reports.dailyreport(update, context)
-        return
+        raise ApplicationHandlerStop
     elif text_lower in ["weeklyreport", "گزارش هفتگی"]:
         await reports.weeklyreport(update, context)
-        return
+        raise ApplicationHandlerStop
     elif text_lower in ["monthlyreport", "گزارش ماهانه"]:
         await reports.monthlyreport(update, context)
-        return
+        raise ApplicationHandlerStop
     elif text_lower in ["userreport", "گزارش کاربر"]:
         await reports.userreport(update, context)
-        return
+        raise ApplicationHandlerStop
     
     # ===== بک‌آپ =====
     elif text_lower in ["backup", "بکاپ"]:
         await backup.backup(update, context)
-        return
+        raise ApplicationHandlerStop
     elif text_lower in ["restore", "بازیابی"]:
         await backup.restore(update, context)
-        return
+        raise ApplicationHandlerStop
     elif text_lower in ["backups", "لیست بکاپ"]:
         await backup.backups_list(update, context)
-        return
+        raise ApplicationHandlerStop
     
     # ===== امنیت =====
     elif text_lower in ["setjoinlimit", "محدودیت ورود"]:
         await security.setjoinlimit(update, context)
-        return
+        raise ApplicationHandlerStop
     elif text_lower in ["security", "امنیت"]:
         await security.security(update, context)
-        return
+        raise ApplicationHandlerStop
     elif text_lower in ["securityreport", "گزارش امنیتی"]:
         await security.securityreport(update, context)
-        return
+        raise ApplicationHandlerStop
     
     # ===== نظرسنجی =====
     elif text_lower in ["poll", "نظرسنجی"]:
         await polls.poll(update, context)
-        return
+        raise ApplicationHandlerStop
     elif text_lower in ["pollresults", "نتایج نظرسنجی"]:
         await polls.poll_results(update, context)
-        return
+        raise ApplicationHandlerStop
     elif text_lower in ["closepoll", "بستن نظرسنجی"]:
         await polls.close_poll(update, context)
-        return
+        raise ApplicationHandlerStop
     
     # ===== سیستم نجوا (Whisper) =====
     elif text_lower in ["whisper", "نجوا"]:
         await whisper.whisper(update, context)
-        return
+        raise ApplicationHandlerStop
     elif text_lower in ["secret", "رمزی"]:
         await whisper.secret(update, context)
-        return
+        raise ApplicationHandlerStop
     elif text_lower in ["mywhispers", "نجواهای من"]:
         await whisper.mywhispers(update, context)
-        return
+        raise ApplicationHandlerStop
     
     # ===== تبدیل صدا به متن =====
     elif text_lower in ["voicetotext", "صدا به متن"]:
         await voicetotext.voicetotext(update, context)
-        return
+        raise ApplicationHandlerStop
     elif text_lower in ["texttovoice", "متن به صدا"]:
         await voicetotext.texttovoice(update, context)
-        return
-    
+        raise ApplicationHandlerStop
+
+    # ===== لینک دعوت با تگ =====
+    elif text_lower in ["newlink", "لینک جدید", "ساخت لینک"]:
+        await invite_links.newlink(update, context)
+        raise ApplicationHandlerStop
+    elif text_lower in ["links", "لینک ها", "لینک‌ها", "لیست لینک"]:
+        await invite_links.links_list(update, context)
+        raise ApplicationHandlerStop
+    elif text_lower in ["revokelink", "حذف لینک", "غیرفعال کردن لینک"]:
+        await invite_links.revoke_link(update, context)
+        raise ApplicationHandlerStop
+
     # ===== دکمه‌های کیبورد =====
     elif text == "📊 آمار گروه":
         await general.stats(update, context)
+        raise ApplicationHandlerStop
     elif text == "🏅 برترین‌ها":
         await general.top(update, context)
+        raise ApplicationHandlerStop
     elif text == "⭐️ امتیاز من":
         await general.mylevel(update, context)
+        raise ApplicationHandlerStop
     elif text == "📜 قوانین":
         await general.rules(update, context)
+        raise ApplicationHandlerStop
     elif text == "📋 راهنما":
         await general.help_cmd(update, context)
+        raise ApplicationHandlerStop
     elif text == "🛡️ پنل مدیریت":
         await dashboard.dashboard(update, context)
+        raise ApplicationHandlerStop
     elif text == "⚠️ اخطار":
         await admin.warn(update, context)
+        raise ApplicationHandlerStop
     elif text == "🔇 بی‌صدا":
         await admin.mute(update, context)
+        raise ApplicationHandlerStop
     elif text == "👢 اخراج":
         await admin.kick(update, context)
+        raise ApplicationHandlerStop
     elif text == "⛔️ بن":
         await admin.ban(update, context)
+        raise ApplicationHandlerStop
     elif text == "🔓 آنبن":
         await admin.unban(update, context)
+        raise ApplicationHandlerStop
     elif text == "🔒 قفل":
         await admin.lock(update, context)
+        raise ApplicationHandlerStop
     elif text == "🔓 باز":
         await admin.unlock(update, context)
+        raise ApplicationHandlerStop
     elif text == "🛡 امنیت":
         await security.security(update, context)
+        raise ApplicationHandlerStop
     elif text == "👑 لیست ادمین‌ها":
         await admin.listadmins(update, context)
+        raise ApplicationHandlerStop
     elif text == "📌 پین":
         await admin.pin(update, context)
+        raise ApplicationHandlerStop
     elif text == "📌 برداشتن پین":
         await admin.unpin(update, context)
+        raise ApplicationHandlerStop
     elif text == "📝 تنظیم خوش‌آمدگویی":
         await admin.setwelcome(update, context)
+        raise ApplicationHandlerStop
     elif text == "📝 تنظیم خداحافظی":
         await admin.setgoodbye(update, context)
+        raise ApplicationHandlerStop
     elif text == "📜 تنظیم قوانین":
         await admin.setrules(update, context)
+        raise ApplicationHandlerStop
     elif text == "🚫 کلمات ممنوعه":
         await admin.listbadwords(update, context)
+        raise ApplicationHandlerStop
     elif text == "📊 گزارش روزانه":
         await reports.dailyreport(update, context)
+        raise ApplicationHandlerStop
     elif text == "📊 گزارش هفتگی":
         await reports.weeklyreport(update, context)
+        raise ApplicationHandlerStop
     elif text == "🔄 بک‌آپ":
         await backup.backup(update, context)
+        raise ApplicationHandlerStop
     elif text == "🎫 تیکت":
         await ticket.ticket(update, context)
+        raise ApplicationHandlerStop
     elif text == "🔙 منوی اصلی":
         await general.start(update, context)
+        raise ApplicationHandlerStop
     elif text == "❌ بستن منو":
         from telegram import ReplyKeyboardRemove
         await update.effective_message.reply_text("❌ منو بسته شد.", reply_markup=ReplyKeyboardRemove())
+        raise ApplicationHandlerStop
 
 
 def main():

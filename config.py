@@ -326,22 +326,27 @@ CENTRAL_BOT_USERNAME = _str_env("CENTRAL_BOT_USERNAME", "")
 
 
 # ---------------------------------------------------------------------------
-# هوش مصنوعی (چت آزاد، تشخیص توهین/فحش، گزارش هوشمند)
-# ---------------------------------------------------------------------------
-
-# کلید API آنتروپیک (Claude). اگه خالی باشه، همه‌ی قابلیت‌های AI خودکار غیرفعال
-# می‌مونن (بدون کرش کردن ربات) - فقط لازمه یه پیام راهنما به کاربر نشون بدیم.
+# هوش مصنوعی (چت آزاد، تشخیص توهین/فحش، گزارش هوشمند) - از طریق AI Gateway لیارا
+# (سازگار با OpenAI Chat Completions API؛ دقیقاً همون سرویسی که پروژه‌ی فروش
+# HEXIRON SALES هم ازش استفاده می‌کنه).
 #
-# ANTHROPIC_API_KEY=sk-ant-...
-ANTHROPIC_API_KEY = _str_env("ANTHROPIC_API_KEY")
+# LIARA_AI_BASE_URL و LIARA_AI_API_KEY رو از console.liara.ir بخش «هوش مصنوعی»
+# کپی کن. اگه خالی بمونن، همه‌ی قابلیت‌های AI بدون کرش غیرفعال می‌مونن.
+# ---------------------------------------------------------------------------
+LIARA_AI_API_KEY = _str_env("LIARA_AI_API_KEY")
+LIARA_AI_BASE_URL = _str_env("LIARA_AI_BASE_URL", "https://ai.liara.ir/api/v1").rstrip("/")
 
 # مدل استفاده‌شده برای چت آزاد (کیفیت بالاتر، هزینه بیشتر)
-AI_CHAT_MODEL = _str_env("AI_CHAT_MODEL", "claude-sonnet-5")
+AI_CHAT_MODEL = _str_env("AI_CHAT_MODEL", "qwen/qwen3.7-flash")
 
 # مدل استفاده‌شده برای تشخیص توهین/فحش و خلاصه‌سازی گزارش (سریع‌تر و ارزون‌تر)
-AI_FAST_MODEL = _str_env("AI_FAST_MODEL", "claude-haiku-4-5-20251001")
+AI_FAST_MODEL = _str_env("AI_FAST_MODEL", "qwen/qwen3.7-flash")
 
-AI_ENABLED = bool(ANTHROPIC_API_KEY)
+# اگه مدل اصلی خطای موقت داد (503/429/provider_unavailable)، به‌ترتیب این مدل‌ها
+# امتحان می‌شن. با کاما جدا کن.
+AI_FALLBACK_MODELS = [m.strip() for m in _str_env("AI_FALLBACK_MODELS").split(",") if m.strip()]
+
+AI_ENABLED = bool(LIARA_AI_API_KEY)
 
 # محدودیت نرخ چت آزاد در پیوی (جلوگیری از هزینه‌ی زیاد/سواستفاده)
 AI_CHAT_RATE_LIMIT_MAX = _positive_int_env("AI_CHAT_RATE_LIMIT_MAX", 12, minimum=1)

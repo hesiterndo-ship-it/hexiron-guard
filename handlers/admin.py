@@ -194,7 +194,7 @@ async def aimod(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from config import AI_ENABLED
     if not AI_ENABLED:
         await update.effective_message.reply_text(
-            "🤖 قابلیت هوش مصنوعی هنوز روی این ربات فعال نشده (ANTHROPIC_API_KEY ست نشده)."
+            "🤖 قابلیت هوش مصنوعی هنوز روی این ربات فعال نشده (LIARA_AI_API_KEY ست نشده)."
         )
         return
 

@@ -213,6 +213,29 @@ CREATE TABLE IF NOT EXISTS support_info (
     telegram_id TEXT,
     updated_at  INTEGER
 );
+
+-- لینک‌های دعوت با تگ (برچسب) برای پیگیری اینکه هر عضو از کدوم لینک/کمپین جوین شده
+CREATE TABLE IF NOT EXISTS invite_links (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    chat_id       INTEGER NOT NULL,
+    tag           TEXT NOT NULL,
+    invite_link   TEXT NOT NULL UNIQUE,
+    is_permanent  INTEGER DEFAULT 1,
+    member_limit  INTEGER,
+    join_count    INTEGER DEFAULT 0,
+    revoked       INTEGER DEFAULT 0,
+    created_by    INTEGER,
+    created_at    INTEGER
+);
+
+-- ثبت هر جوین از طریق یه لینک تگ‌دار (برای گزارش «چه کسی از کجا اومد»)
+CREATE TABLE IF NOT EXISTS invite_link_joins (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    link_id     INTEGER NOT NULL,
+    user_id     INTEGER NOT NULL,
+    username    TEXT,
+    joined_at   INTEGER
+);
 """
 
 
@@ -1244,3 +1267,53 @@ def get_support_info() -> dict | None:
     with get_conn() as conn:
         row = conn.execute("SELECT * FROM support_info WHERE id=1").fetchone()
         return dict(row) if row else None
+
+
+# ============================== لینک‌های دعوت با تگ ==============================
+
+def create_invite_link_record(chat_id: int, tag: str, invite_link: str, is_permanent: bool,
+                               member_limit: int | None, created_by: int) -> int:
+    with get_conn() as conn:
+        cur = conn.execute(
+            """INSERT INTO invite_links (chat_id, tag, invite_link, is_permanent, member_limit,
+                   created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (chat_id, tag, invite_link, 1 if is_permanent else 0, member_limit, created_by, int(time.time())),
+        )
+        return cur.lastrowid
+
+
+def get_invite_links_for_chat(chat_id: int, include_revoked: bool = False) -> list:
+    with get_conn() as conn:
+        query = "SELECT * FROM invite_links WHERE chat_id=?"
+        if not include_revoked:
+            query += " AND revoked=0"
+        query += " ORDER BY created_at DESC"
+        return [dict(r) for r in conn.execute(query, (chat_id,)).fetchall()]
+
+
+def get_invite_link_by_url(invite_link: str) -> dict | None:
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM invite_links WHERE invite_link=?", (invite_link,)).fetchone()
+        return dict(row) if row else None
+
+
+def get_invite_link_by_tag(chat_id: int, tag: str) -> dict | None:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM invite_links WHERE chat_id=? AND tag=? AND revoked=0", (chat_id, tag)
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def record_invite_link_join(link_id: int, user_id: int, username: str | None):
+    with get_conn() as conn:
+        conn.execute("UPDATE invite_links SET join_count = join_count + 1 WHERE id=?", (link_id,))
+        conn.execute(
+            "INSERT INTO invite_link_joins (link_id, user_id, username, joined_at) VALUES (?, ?, ?, ?)",
+            (link_id, user_id, username, int(time.time())),
+        )
+
+
+def revoke_invite_link_record(link_id: int):
+    with get_conn() as conn:
+        conn.execute("UPDATE invite_links SET revoked=1 WHERE id=?", (link_id,))

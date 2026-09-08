@@ -142,7 +142,7 @@ async def dashboard_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
         from config import AI_ENABLED
         settings = db.get_settings(chat_id)
         ai_status = "✅ فعال" if settings.get("ai_moderation") else "❌ غیرفعال"
-        configured = "✅ تنظیم شده" if AI_ENABLED else "❌ تنظیم نشده (ANTHROPIC_API_KEY خالیه)"
+        configured = "✅ تنظیم شده" if AI_ENABLED else "❌ تنظیم نشده (LIARA_AI_API_KEY خالیه)"
         await query.edit_message_text(
             f"🤖 *هوش مصنوعی*\n\n"
             f"وضعیت کلی: {configured}\n"
