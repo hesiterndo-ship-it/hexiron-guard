@@ -8,7 +8,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 import database as db
 from utils.ffmpeg_setup import ensure_ffmpeg
 from config import BOT_TOKEN, PROXY_URL
-from handlers import admin, antispam, general, welcome, dashboard, ticket, force_subscribe, reactions, reports, backup, security, polls, whisper, voicetotext, invite_links
+from handlers import admin, antispam, general, welcome, dashboard, ticket, force_subscribe, reactions, reports, backup, security, polls, whisper, voicetotext, invite_links, ai_chat
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -58,6 +58,7 @@ def build_application() -> Application:
     app.add_handler(CommandHandler("unlock", admin.unlock))
     app.add_handler(CommandHandler("aimod", admin.aimod))
     app.add_handler(CommandHandler("aiwelcome", admin.aiwelcome))
+    app.add_handler(CommandHandler("aitest", admin.aitest))
     app.add_handler(CommandHandler("trustbot", security.trustbot))
     app.add_handler(CommandHandler("untrustbot", security.untrustbot))
     app.add_handler(CommandHandler("trustedbots", security.trustedbots))
@@ -167,6 +168,11 @@ def build_application() -> Application:
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.GROUPS, handle_text_commands), group=-1)
     
     # ===== ثبت کامل خطاها توی ترمینال (به‌جای بی‌صدا خوردنشون) =====
+    # ===== هوش مصنوعی: /aireport + چت آزاد در پیوی (باید همین‌جا، آخر همه‌ی
+    # هندلرهای group=0 پیوی ثبت بشه، چون طراحیش fallback ـه: فقط وقتی هیچ
+    # مکالمه/دستور دیگه‌ای (شاپ، پنل کاربر/ادمین، تیکت) پیام رو نگرفت، اجرا می‌شه) =====
+    ai_chat.register_ai_handlers(app)
+
     app.add_error_handler(on_error)
     
     if app.job_queue is None:
@@ -305,6 +311,9 @@ async def handle_text_commands(update: Update, context: ContextTypes.DEFAULT_TYP
         raise ApplicationHandlerStop
     elif text_lower in ["aiwelcome", "خوش آمدگویی هوشمند", "خوشامدگویی هوشمند"]:
         await admin.aiwelcome(update, context)
+        raise ApplicationHandlerStop
+    elif text_lower in ["aitest", "تست هوش مصنوعی", "تست اتصال هوش مصنوعی"]:
+        await admin.aitest(update, context)
         raise ApplicationHandlerStop
     elif text_lower in ["trustbot", "اعتماد به بات"]:
         await security.trustbot(update, context)

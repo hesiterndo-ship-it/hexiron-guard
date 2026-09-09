@@ -237,6 +237,32 @@ async def aiwelcome(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.effective_message.reply_text("❌ خوش‌آمدگویی هوشمند غیرفعال شد؛ برگشتیم به متن ثابت.")
 
 
+async def aitest(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """تست مستقیم اتصال به سرویس هوش مصنوعی - مستقل از بقیه‌ی قابلیت‌ها (چت/فحش/گزارش).
+    هم توی پیوی هم توی گروه کار می‌کنه، فقط برای ادمین/مالک."""
+    if not await require_admin(update, context):
+        return
+
+    from config import AI_ENABLED
+    if not AI_ENABLED:
+        await update.effective_message.reply_text(
+            "⛔️ هنوز `LIARA_AI_API_KEY` روی این ربات ست نشده."
+        )
+        return
+
+    from utils import ai_client
+    wait_msg = await update.effective_message.reply_text("⏳ در حال تست اتصال به سرویس هوش مصنوعی...")
+    try:
+        reply = await ai_client.test_connection()
+        await wait_msg.edit_text(f"✅ اتصال برقراره!\nپاسخ مدل: {reply}")
+    except Exception as e:
+        await wait_msg.edit_text(
+            f"❌ اتصال برقرار نشد:\n`{e}`\n\n"
+            "این خطا معمولاً یعنی یکی از این‌ها اشتباهه: `LIARA_AI_API_KEY`، `LIARA_AI_BASE_URL`، یا `AI_CHAT_MODEL`.",
+            parse_mode="Markdown",
+        )
+
+
 async def pin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await require_admin(update, context):
         return

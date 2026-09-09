@@ -219,3 +219,17 @@ async def generate_farewell_message(name: str, chat_title: str, fallback: str) -
     except Exception as e:
         logger.warning(f"generate_farewell_message failed, using fallback template: {e}")
         return fallback
+
+
+async def test_connection() -> str:
+    """
+    یه پیام خیلی کوچیک به سرویس می‌فرسته تا صحت LIARA_AI_API_KEY / LIARA_AI_BASE_URL /
+    AI_CHAT_MODEL چک بشه - مستقل از تمام قابلیت‌های دیگه (چت، فحش، گزارش، خوش‌آمد).
+    خروجی یا جواب مدله یا Exception با متن خطای دقیق.
+    """
+    return await _call_chat(
+        AI_CHAT_MODEL,
+        [{"role": "system", "content": "فقط یک کلمه به فارسی جواب بده: سلام"},
+         {"role": "user", "content": "تست اتصال"}],
+        temperature=0, max_tokens=20,
+    )
