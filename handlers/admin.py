@@ -211,6 +211,32 @@ async def aimod(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.effective_message.reply_text("❌ تشخیص هوشمند فحش/توهین غیرفعال شد.")
 
 
+async def aiwelcome(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """روشن/خاموش کردن خوش‌آمدگویی و خداحافظی متنوع با هوش مصنوعی (به‌جای متن ثابت)."""
+    if not await require_admin(update, context):
+        return
+
+    from config import AI_ENABLED
+    if not AI_ENABLED:
+        await update.effective_message.reply_text(
+            "🤖 قابلیت هوش مصنوعی هنوز روی این ربات فعال نشده (LIARA_AI_API_KEY ست نشده)."
+        )
+        return
+
+    chat_id = update.effective_chat.id
+    settings = db.get_settings(chat_id)
+    new_val = 0 if settings.get("ai_welcome") else 1
+    db.set_setting(chat_id, "ai_welcome", new_val)
+    if new_val:
+        await update.effective_message.reply_text(
+            "✅ خوش‌آمدگویی و خداحافظی هوشمند فعال شد. از این به بعد، به‌جای متن ثابت، هر بار "
+            "یه پیام متفاوت با هوش مصنوعی ساخته می‌شه (اگه AI موقتاً جواب نده، همون متن ثابت "
+            "قبلی به‌عنوان جایگزین امن استفاده می‌شه)."
+        )
+    else:
+        await update.effective_message.reply_text("❌ خوش‌آمدگویی هوشمند غیرفعال شد؛ برگشتیم به متن ثابت.")
+
+
 async def pin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await require_admin(update, context):
         return

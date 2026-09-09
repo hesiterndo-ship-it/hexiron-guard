@@ -57,6 +57,7 @@ def build_application() -> Application:
     app.add_handler(CommandHandler("lock", admin.lock))
     app.add_handler(CommandHandler("unlock", admin.unlock))
     app.add_handler(CommandHandler("aimod", admin.aimod))
+    app.add_handler(CommandHandler("aiwelcome", admin.aiwelcome))
     app.add_handler(CommandHandler("trustbot", security.trustbot))
     app.add_handler(CommandHandler("untrustbot", security.untrustbot))
     app.add_handler(CommandHandler("trustedbots", security.trustedbots))
@@ -301,6 +302,9 @@ async def handle_text_commands(update: Update, context: ContextTypes.DEFAULT_TYP
         raise ApplicationHandlerStop
     elif text_lower in ["aimod", "هوش مصنوعی", "تشخیص هوشمند"]:
         await admin.aimod(update, context)
+        raise ApplicationHandlerStop
+    elif text_lower in ["aiwelcome", "خوش آمدگویی هوشمند", "خوشامدگویی هوشمند"]:
+        await admin.aiwelcome(update, context)
         raise ApplicationHandlerStop
     elif text_lower in ["trustbot", "اعتماد به بات"]:
         await security.trustbot(update, context)

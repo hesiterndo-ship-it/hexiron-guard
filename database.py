@@ -280,6 +280,7 @@ def init_db():
         _add_column_if_missing(conn, "users_with_subscription", "group_link", "TEXT")
         _add_column_if_missing(conn, "discount_codes", "valid_days", "INTEGER")
         _add_column_if_missing(conn, "discount_codes", "expires_at", "INTEGER")
+        _add_column_if_missing(conn, "settings", "ai_welcome", "INTEGER DEFAULT 0")
 
         # پکیج‌های پیش‌فرض رو فقط یک‌بار (اگه جدول خالیه) اضافه کن
         count = conn.execute("SELECT COUNT(*) c FROM plans").fetchone()["c"]
@@ -434,7 +435,7 @@ def get_settings(chat_id: int) -> dict:
 
 
 def set_setting(chat_id: int, field: str, value):
-    allowed_fields = {"welcome_text", "goodbye_text", "rules_text", "locked", "slow_mode", "slow_delay", "force_channels", "join_limit", "security_enabled", "ai_moderation", "trusted_bots"}
+    allowed_fields = {"welcome_text", "goodbye_text", "rules_text", "locked", "slow_mode", "slow_delay", "force_channels", "join_limit", "security_enabled", "ai_moderation", "trusted_bots", "ai_welcome"}
     assert field in allowed_fields, f"فیلد {field} مجاز نیست"
     with get_conn() as conn:
         _ensure_settings_row(conn, chat_id)

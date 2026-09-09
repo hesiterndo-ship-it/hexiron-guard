@@ -168,3 +168,54 @@ async def ai_group_report(raw_stats: dict) -> str:
     except Exception as e:
         logger.error(f"ai_group_report failed: {e}")
         return "😕 مشکلی توی ساخت گزارش هوشمند پیش اومد."
+
+
+WELCOME_SYSTEM_PROMPT = (
+    "تو یک ربات مدیریت گروه تلگرامی فارسی‌زبان هستی. هر بار که یک عضو جدید وارد گروه "
+    "می‌شه، باید یک پیام خوش‌آمدگویی کوتاه (۱ تا ۲ جمله)، گرم و متفاوت از دفعه‌های قبل "
+    "بنویسی - نه یک جمله‌ی تکراری و ثابت. می‌تونی از ایموجی مناسب استفاده کنی. حتماً اسم "
+    "کاربر و اسم گروه رو توی پیام بیار. لحن صمیمی و مثبت داشته باش. فقط همون متن نهایی رو "
+    "برگردون، بدون توضیح اضافه."
+)
+
+FAREWELL_SYSTEM_PROMPT = (
+    "تو یک ربات مدیریت گروه تلگرامی فارسی‌زبان هستی. هر بار یک عضو از گروه خارج می‌شه، "
+    "باید یک پیام خداحافظی کوتاه (۱ جمله)، محترمانه و متفاوت از دفعه‌های قبل بنویسی - نه "
+    "یک جمله‌ی تکراری. لحن نه خیلی غم‌انگیز نه بی‌تفاوت، فقط یه خداحافظی ساده و مودبانه. "
+    "اسم کاربر رو بیار. فقط همون متن نهایی رو برگردون، بدون توضیح اضافه."
+)
+
+
+async def generate_welcome_message(name: str, chat_title: str, fallback: str) -> str:
+    """پیام خوش‌آمدگویی متنوع می‌سازه. اگه AI خطا بده یا فعال نباشه، fallback (همون
+    قالب ثابتی که ادمین تنظیم کرده) برگردونده می‌شه - هیچ‌وقت پیام خوش‌آمد رو کاملاً از دست نمی‌دیم."""
+    if not AI_ENABLED:
+        return fallback
+    try:
+        content = await _call_chat(
+            AI_FAST_MODEL,
+            [{"role": "system", "content": WELCOME_SYSTEM_PROMPT},
+             {"role": "user", "content": f"اسم کاربر: {name}\nاسم گروه: {chat_title}"}],
+            temperature=0.9, max_tokens=150,
+        )
+        return _sanitize(content) or fallback
+    except Exception as e:
+        logger.warning(f"generate_welcome_message failed, using fallback template: {e}")
+        return fallback
+
+
+async def generate_farewell_message(name: str, chat_title: str, fallback: str) -> str:
+    """پیام خداحافظی متنوع می‌سازه. مثل بالا، fallback امن داره."""
+    if not AI_ENABLED:
+        return fallback
+    try:
+        content = await _call_chat(
+            AI_FAST_MODEL,
+            [{"role": "system", "content": FAREWELL_SYSTEM_PROMPT},
+             {"role": "user", "content": f"اسم کاربر: {name}\nاسم گروه: {chat_title}"}],
+            temperature=0.9, max_tokens=100,
+        )
+        return _sanitize(content) or fallback
+    except Exception as e:
+        logger.warning(f"generate_farewell_message failed, using fallback template: {e}")
+        return fallback

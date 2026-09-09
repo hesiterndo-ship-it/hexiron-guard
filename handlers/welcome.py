@@ -1,9 +1,14 @@
 """Handles new members joining/leaving, and awards points per message."""
+import logging
+
 from telegram import Update
 from telegram.ext import ContextTypes
 
 import database as db
-from config import POINTS_PER_MESSAGE
+from config import POINTS_PER_MESSAGE, AI_ENABLED
+from utils import ai_client
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_WELCOME = "🎉 خوش آمدی {name} عزیز به گروه {chat_title}!"
 DEFAULT_GOODBYE = "👋 {name} از گروه خارج شد."
@@ -23,11 +28,20 @@ async def greet_new_members(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     settings = db.get_settings(chat.id)
     template = settings.get("welcome_text") or DEFAULT_WELCOME
+    ai_welcome = AI_ENABLED and bool(settings.get("ai_welcome"))
 
     for member in update.message.new_chat_members:
         db.upsert_user(chat.id, member.id, member.username, member.first_name)
         name = member.first_name or member.username or "کاربر"
-        text = _safe_template(template, name=name, chat_title=chat.title or "")
+        fallback_text = _safe_template(template, name=name, chat_title=chat.title or "")
+        if ai_welcome:
+            try:
+                text = await ai_client.generate_welcome_message(name, chat.title or "", fallback_text)
+            except Exception:
+                logger.exception("generate_welcome_message crashed - using fallback template")
+                text = fallback_text
+        else:
+            text = fallback_text
         await update.effective_message.reply_text(text)
 
 
@@ -39,7 +53,16 @@ async def farewell_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
     settings = db.get_settings(chat.id)
     template = settings.get("goodbye_text") or DEFAULT_GOODBYE
     name = left.first_name or left.username or "کاربر"
-    text = _safe_template(template, name=name, chat_title=chat.title or "")
+    fallback_text = _safe_template(template, name=name, chat_title=chat.title or "")
+
+    if AI_ENABLED and bool(settings.get("ai_welcome")):
+        try:
+            text = await ai_client.generate_farewell_message(name, chat.title or "", fallback_text)
+        except Exception:
+            logger.exception("generate_farewell_message crashed - using fallback template")
+            text = fallback_text
+    else:
+        text = fallback_text
     await update.effective_message.reply_text(text)
 
 
