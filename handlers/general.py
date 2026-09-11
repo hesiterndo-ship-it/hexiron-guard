@@ -107,6 +107,26 @@ async def groupid_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.effective_message.reply_text(f"🆔 آیدی این گروه:\n`{update.effective_chat.id}`", parse_mode="Markdown")
 
 
+async def grouplink_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """لینک دعوت همین گروه رو برمی‌گردونه (کنار /groupid، برای همون کاربردِ
+    ثبت/تمدید لایسنس توی ربات فروش که آیدی و لینک هر دو لازمن).
+    توجه: اگه لینک دعوت اصلی از قبل وجود داشته باشه، همون رو برمی‌گردونه (نه
+    export_chat_invite_link که هر بار لینک قبلی رو باطل می‌کنه و یه لینک تازه می‌سازه)."""
+    chat = update.effective_chat
+    try:
+        fresh_chat = await context.bot.get_chat(chat.id)
+        link = fresh_chat.invite_link
+        if not link:
+            link = await context.bot.export_chat_invite_link(chat.id)
+    except Exception as e:
+        await update.effective_message.reply_text(
+            f"❌ نتونستم لینک رو بگیرم ({e}).\n"
+            "مطمئن شو ربات توی این گروه ادمین با دسترسی «دعوت کاربران» هست."
+        )
+        return
+    await update.effective_message.reply_text(f"🔗 لینک دعوت این گروه:\n{link}")
+
+
 async def private_start_redirect(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """این ربات (گارد) دیگه خودش فروش نداره. کاربری که توی پیوی این ربات
     /start یا /shop بزنه، به ربات فروش مرکزی هدایت می‌شه."""

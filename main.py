@@ -125,6 +125,7 @@ def build_application() -> Application:
     app.add_handler(CommandHandler("start", general.private_start_redirect, filters=filters.ChatType.PRIVATE))
     app.add_handler(CommandHandler("shop", general.private_start_redirect, filters=filters.ChatType.PRIVATE))
     app.add_handler(CommandHandler("groupid", general.groupid_cmd, filters=filters.ChatType.GROUPS))
+    app.add_handler(CommandHandler("grouplink", general.grouplink_cmd, filters=filters.ChatType.GROUPS))
     
     # رویدادهای عضویت
     # نکته: check_join_security و check_bot_entry (توی security.py) هم روی همین

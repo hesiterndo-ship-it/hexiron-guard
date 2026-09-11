@@ -352,4 +352,8 @@ AI_ENABLED = bool(LIARA_AI_API_KEY)
 AI_CHAT_RATE_LIMIT_MAX = _positive_int_env("AI_CHAT_RATE_LIMIT_MAX", 12, minimum=1)
 AI_CHAT_RATE_LIMIT_WINDOW = _positive_int_env("AI_CHAT_RATE_LIMIT_WINDOW", 60, minimum=10)
 
+# سهمیه‌ی روزانه‌ی هر کاربر برای چت خصوصی با AI (کنترل هزینه - جدا از rate-limit
+# دقیقه‌ای بالا). با گذشت نیمه‌شب (به وقت سرور) شمارش از نو شروع می‌شه.
+AI_DAILY_MESSAGE_LIMIT = _positive_int_env("AI_DAILY_MESSAGE_LIMIT", 30, minimum=1)
+
 #

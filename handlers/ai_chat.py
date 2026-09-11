@@ -1,16 +1,18 @@
 """
 هوش مصنوعی:
   - چت آزاد توی پیوی ربات (شعر، سوال، هر چیزی) - fallback، فقط وقتی هیچ
-    مکالمه/دستور دیگه‌ای اون پیام رو نگرفته باشه.
+    مکالمه/دستور دیگه‌ای اون پیام رو نگرفته باشه. فقط برای اعضای واقعیِ گروه‌ها
+    (کسی که تا حالا توی هیچ گروهی که ربات توشه دیده نشده باشه، جواب نمی‌گیره).
   - /aireport - گزارش هوشمند از وضعیت گروه، برای ادمین/مالک گروه، توی پیوی.
 """
 import logging
+import time as _time
 
 from telegram import Update
 from telegram.ext import ContextTypes, filters, CommandHandler, MessageHandler
 
 import database as db
-from config import AI_ENABLED, AI_CHAT_RATE_LIMIT_MAX, AI_CHAT_RATE_LIMIT_WINDOW
+from config import AI_ENABLED, AI_CHAT_RATE_LIMIT_MAX, AI_CHAT_RATE_LIMIT_WINDOW, AI_DAILY_MESSAGE_LIMIT
 from utils.ai_client import ai_chat, ai_group_report, NOT_CONFIGURED_MSG
 from utils.ratelimit import is_rate_limited
 from utils.permissions import require_admin
@@ -23,6 +25,10 @@ _MAX_HISTORY = 10
 _chat_history: dict[int, list] = {}
 
 
+def _today() -> str:
+    return _time.strftime("%Y-%m-%d", _time.gmtime())
+
+
 async def ai_private_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """fallback برای پیام‌های متنیِ خصوصی که هیچ هندلر دیگه‌ای قبولشون نکرده."""
     if not AI_ENABLED:
@@ -31,6 +37,23 @@ async def ai_private_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     text = update.effective_message.text
     if not text:
+        return
+
+    # فقط اعضای واقعیِ حداقل یه گروه که ربات توشه اجازه‌ی چت با AI رو دارن -
+    # این هم برای کنترل هزینه‌ست و هم برای اینکه چت آزاد رایگان به کل عموم مردم درز نکنه.
+    if not db.is_known_group_member(user.id):
+        await update.effective_message.reply_text(
+            "🔒 این قابلیت فقط برای اعضای گروه‌هایی هست که این ربات توشونه.\n"
+            "اگه عضو یکی از اون گروه‌هایی، یه پیام توی خودِ گروه بفرست (حتی یه سلام)، بعد دوباره اینجا امتحان کن."
+        )
+        return
+
+    today = _today()
+    used = db.get_ai_daily_usage(user.id, today)
+    if used >= AI_DAILY_MESSAGE_LIMIT:
+        await update.effective_message.reply_text(
+            f"📊 سهمیه‌ی امروزت ({AI_DAILY_MESSAGE_LIMIT} پیام) تموم شده. فردا دوباره امتحان کن."
+        )
         return
 
     if is_rate_limited(f"aichat_{user.id}", max_attempts=AI_CHAT_RATE_LIMIT_MAX,
@@ -48,6 +71,7 @@ async def ai_private_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     history = history + [{"role": "user", "content": text}, {"role": "assistant", "content": reply}]
     _chat_history[user.id] = history[-_MAX_HISTORY * 2:]
 
+    db.increment_ai_daily_usage(user.id, today)
     await update.effective_message.reply_text(reply)
 
 

@@ -10,6 +10,14 @@ from pathlib import Path
 from config import DB_PATH
 
 SCHEMA = """
+-- سهمیه‌ی روزانه‌ی استفاده از هوش مصنوعی برای هر کاربر (کنترل هزینه)
+CREATE TABLE IF NOT EXISTS ai_daily_usage (
+    user_id       INTEGER NOT NULL,
+    day           TEXT NOT NULL,
+    message_count INTEGER DEFAULT 0,
+    PRIMARY KEY (user_id, day)
+);
+
 -- جدول کاربران
 CREATE TABLE IF NOT EXISTS users (
     chat_id     INTEGER NOT NULL,
@@ -318,6 +326,32 @@ def upsert_user(chat_id: int, user_id: int, username: str | None, first_name: st
                 first_name=excluded.first_name
             """,
             (chat_id, user_id, username, first_name, int(time.time())),
+        )
+
+
+def is_known_group_member(user_id: int) -> bool:
+    """آیا این کاربر توی حداقل یکی از گروه‌هایی که ربات مدیریت می‌کنه دیده شده؟
+    (یعنی حداقل یه‌بار پیام داده یا جوین شده). برای محدودکردن چت خصوصیِ AI فقط
+    به اعضای واقعیِ گروه‌ها استفاده می‌شه."""
+    with get_conn() as conn:
+        row = conn.execute("SELECT 1 FROM users WHERE user_id=? LIMIT 1", (user_id,)).fetchone()
+        return row is not None
+
+
+def get_ai_daily_usage(user_id: int, day: str) -> int:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT message_count FROM ai_daily_usage WHERE user_id=? AND day=?", (user_id, day)
+        ).fetchone()
+        return row["message_count"] if row else 0
+
+
+def increment_ai_daily_usage(user_id: int, day: str):
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT INTO ai_daily_usage (user_id, day, message_count) VALUES (?, ?, 1)
+               ON CONFLICT(user_id, day) DO UPDATE SET message_count = message_count + 1""",
+            (user_id, day),
         )
 
 
