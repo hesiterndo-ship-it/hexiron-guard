@@ -75,6 +75,48 @@ async def voicetotext(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.effective_message.reply_text(f"❌ خطا: {e}")
 
 
+
+async def transcribe_voice_file(context, voice):
+    """دانلود یه ویس تلگرام و تبدیلش به متن (اول فارسی امتحان می‌کنه، بعد انگلیسی).
+    خروجی None یعنی هیچ‌کدوم موفق نشدن (نه خطای فنی، فقط تشخیص ناموفق)."""
+    voice_file = await context.bot.get_file(voice.file_id)
+    ogg_path = os.path.join(AUDIO_DIR, f"voice_{int(time.time())}_{voice.file_unique_id}.ogg")
+    wav_path = ogg_path.replace(".ogg", ".wav")
+    try:
+        await voice_file.download_to_drive(ogg_path)
+        audio = AudioSegment.from_ogg(ogg_path)
+        audio.export(wav_path, format="wav")
+
+        recognizer = sr.Recognizer()
+        with sr.AudioFile(wav_path) as source:
+            audio_data = recognizer.record(source)
+
+        try:
+            return recognizer.recognize_google(audio_data, language="fa-IR")
+        except sr.UnknownValueError:
+            try:
+                return recognizer.recognize_google(audio_data, language="en-US")
+            except sr.UnknownValueError:
+                return None
+    finally:
+        if os.path.exists(ogg_path):
+            os.remove(ogg_path)
+        if os.path.exists(wav_path):
+            os.remove(wav_path)
+
+
+def synthesize_speech_to_file(text: str, lang: str = "fa") -> str:
+    """متن رو به یه فایل mp3 موقت تبدیل می‌کنه و مسیرش رو برمی‌گردونه. مسئولیت
+    حذف فایل بعد از استفاده با فراخوان‌کننده‌ست (مثل تمام جاهای دیگه‌ی این ماژول)."""
+    from gtts import gTTS
+    import tempfile
+
+    tts = gTTS(text=text[:800], lang=lang, slow=False)
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
+    tts.save(tmp.name)
+    return tmp.name
+
+
 async def texttovoice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """تبدیل متن به صدا"""
     chat_id = update.effective_chat.id

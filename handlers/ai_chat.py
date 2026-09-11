@@ -1,11 +1,15 @@
 """
-هوش مصنوعی:
-  - چت آزاد توی پیوی ربات (شعر، سوال، هر چیزی) - fallback، فقط وقتی هیچ
-    مکالمه/دستور دیگه‌ای اون پیام رو نگرفته باشه. فقط برای اعضای واقعیِ گروه‌ها
-    (کسی که تا حالا توی هیچ گروهی که ربات توشه دیده نشده باشه، جواب نمی‌گیره).
+هوش مصنوعی (Hexi):
+  - چت آزاد توی پیوی ربات (متن یا ویس) - فقط برای اعضای واقعیِ گروه‌ها.
+  - پاسخ داخل گروه وقتی با «Hexi»/«هگزی» صدا زده بشه (متن)، یا وقتی روی پیام
+    خودِ Hexi ویس ریپلای بشه.
   - /aireport - گزارش هوشمند از وضعیت گروه، برای ادمین/مالک گروه، توی پیوی.
+
+کنترل هزینه: سهمیه‌ی روزانه‌ی پیام (AI_DAILY_MESSAGE_LIMIT) + rate-limit دقیقه‌ای،
+مشترک بین متن/ویس و بین پیوی/گروه - برای هر کاربر یکی حساب می‌شه.
 """
 import logging
+import os
 import time as _time
 
 from telegram import Update
@@ -16,31 +20,72 @@ from config import AI_ENABLED, AI_CHAT_RATE_LIMIT_MAX, AI_CHAT_RATE_LIMIT_WINDOW
 from utils.ai_client import ai_chat, ai_group_report, NOT_CONFIGURED_MSG, GROUP_CHAT_SYSTEM_PROMPT
 from utils.ratelimit import is_rate_limited
 from utils.permissions import require_admin
+from handlers.voicetotext import transcribe_voice_file, synthesize_speech_to_file
 
 logger = logging.getLogger(__name__)
 
-# تاریخچه‌ی ساده‌ی مکالمه در حافظه (نه دیتابیس) - هر پردازش ری‌استارت بشه پاک می‌شه.
-# هر کاربر حداکثر آخرین ۱۰ پیام رو برای حفظ context نگه می‌داره.
+# تاریخچه‌ی مکالمه در حافظه (نه دیتابیس) - هر پردازش ری‌استارت بشه پاک می‌شه.
 _MAX_HISTORY = 10
-_chat_history: dict[int, list] = {}
+_chat_history: dict[int, list] = {}          # کلید: user_id (پیوی)
+_group_chat_history: dict[str, list] = {}    # کلید: f"{chat_id}:{user_id}" (گروه)
 
 
 def _today() -> str:
     return _time.strftime("%Y-%m-%d", _time.gmtime())
 
 
+def _check_quota_and_rate(user_id: int) -> str | None:
+    """فقط سهمیه‌ی روزانه + rate-limit رو چک می‌کنه (نه عضویت گروه - اون جدا و
+    فقط برای پیویه). خروجی None یعنی مجازه، وگرنه متن پیامِ محدودیت."""
+    today = _today()
+    used = db.get_ai_daily_usage(user_id, today)
+    if used >= AI_DAILY_MESSAGE_LIMIT:
+        return f"📊 سهمیه‌ی امروزت ({AI_DAILY_MESSAGE_LIMIT} پیام) تموم شده. فردا دوباره امتحان کن."
+    if is_rate_limited(f"aichat_{user_id}", max_attempts=AI_CHAT_RATE_LIMIT_MAX,
+                        window_seconds=AI_CHAT_RATE_LIMIT_WINDOW):
+        return "⏳ یکم آروم‌تر! چند لحظه صبر کن و دوباره امتحان کن."
+    return None
+
+
+async def _run_hexi(user, question: str, history_store: dict, history_key, system_prompt: str) -> str:
+    """تماس اصلی با AI + مدیریت تاریخچه + افزایش شمارنده‌ی سهمیه. فرض می‌کنه
+    _check_quota_and_rate از قبل چک شده. خروجی: متن پاسخ."""
+    history = history_store.get(history_key, [])
+    reply = await ai_chat(question, history=history, system_prompt=system_prompt)
+    history = history + [{"role": "user", "content": question}, {"role": "assistant", "content": reply}]
+    history_store[history_key] = history[-_MAX_HISTORY * 2:]
+    db.increment_ai_daily_usage(user.id, _today())
+    return reply
+
+
+async def _maybe_reply_with_voice(update: Update, context: ContextTypes.DEFAULT_TYPE, reply_text: str):
+    """اگه پیام ورودی ویس بود، پاسخ رو هم به‌صورت ویس (علاوه بر متن) می‌فرسته.
+    اگه ساخت ویس شکست خورد، فقط لاگ می‌کنه - جلوی پاسخ متنی رو نمی‌گیره."""
+    try:
+        path = synthesize_speech_to_file(reply_text)
+    except Exception:
+        logger.exception("synthesize_speech_to_file failed - فقط پاسخ متنی فرستاده می‌شه")
+        return
+    try:
+        with open(path, "rb") as f:
+            await context.bot.send_voice(chat_id=update.effective_chat.id, voice=f)
+    except Exception:
+        logger.exception("ارسال ویس پاسخ Hexi شکست خورد")
+    finally:
+        if os.path.exists(path):
+            os.remove(path)
+
+
 async def ai_private_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """fallback برای پیام‌های متنیِ خصوصی که هیچ هندلر دیگه‌ای قبولشون نکرده."""
     if not AI_ENABLED:
-        return  # اگه AI خاموشه، اصلاً وارد نشو - بذار پیام بی‌جواب بمونه به‌جای گیج‌کردن کاربر
+        return
 
     user = update.effective_user
     text = update.effective_message.text
     if not text:
         return
 
-    # فقط اعضای واقعیِ حداقل یه گروه که ربات توشه اجازه‌ی چت با AI رو دارن -
-    # این هم برای کنترل هزینه‌ست و هم برای اینکه چت آزاد رایگان به کل عموم مردم درز نکنه.
     if not db.is_known_group_member(user.id):
         await update.effective_message.reply_text(
             "🔒 این قابلیت فقط برای اعضای گروه‌هایی هست که این ربات توشونه.\n"
@@ -48,31 +93,49 @@ async def ai_private_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    today = _today()
-    used = db.get_ai_daily_usage(user.id, today)
-    if used >= AI_DAILY_MESSAGE_LIMIT:
-        await update.effective_message.reply_text(
-            f"📊 سهمیه‌ی امروزت ({AI_DAILY_MESSAGE_LIMIT} پیام) تموم شده. فردا دوباره امتحان کن."
-        )
-        return
-
-    if is_rate_limited(f"aichat_{user.id}", max_attempts=AI_CHAT_RATE_LIMIT_MAX,
-                        window_seconds=AI_CHAT_RATE_LIMIT_WINDOW):
-        await update.effective_message.reply_text(
-            "⏳ یکم آروم‌تر! چند لحظه صبر کن و دوباره امتحان کن."
-        )
+    block_msg = _check_quota_and_rate(user.id)
+    if block_msg:
+        await update.effective_message.reply_text(block_msg)
         return
 
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
-
-    history = _chat_history.get(user.id, [])
-    reply = await ai_chat(text, history=history)
-
-    history = history + [{"role": "user", "content": text}, {"role": "assistant", "content": reply}]
-    _chat_history[user.id] = history[-_MAX_HISTORY * 2:]
-
-    db.increment_ai_daily_usage(user.id, today)
+    reply = await _run_hexi(user, text, _chat_history, user.id, system_prompt=None)
     await update.effective_message.reply_text(reply)
+
+
+def _private_prompt():
+    return None
+
+
+async def ai_private_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """پیوی: وقتی کاربر به‌جای متن، ویس می‌فرسته."""
+    if not AI_ENABLED:
+        return
+    user = update.effective_user
+    voice = update.effective_message.voice
+    if not voice:
+        return
+
+    if not db.is_known_group_member(user.id):
+        await update.effective_message.reply_text(
+            "🔒 این قابلیت فقط برای اعضای گروه‌هایی هست که این ربات توشونه."
+        )
+        return
+
+    block_msg = _check_quota_and_rate(user.id)
+    if block_msg:
+        await update.effective_message.reply_text(block_msg)
+        return
+
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
+    text = await transcribe_voice_file(context, voice)
+    if not text:
+        await update.effective_message.reply_text("🎙 نتونستم صداتو تشخیص بدم. یه‌بار دیگه و واضح‌تر بگو.")
+        return
+
+    reply = await _run_hexi(user, text, _chat_history, user.id, system_prompt=_private_prompt())
+    await update.effective_message.reply_text(f"🎙 شنیدم: «{text}»\n\n{reply}")
+    await _maybe_reply_with_voice(update, context, reply)
 
 
 async def aireport_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -129,10 +192,6 @@ async def aireport_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # دقیق نگه‌داشته شده (نه با NLU/تشخیص هوشمند نیت) تا با چت عادی گروه تداخل نداشته باشه.
 _HEXI_TRIGGERS = ("hexi", "هگزی", "هکسی")
 
-# حافظه‌ی مکالمه‌ی هر کاربر داخل گروه - جدا از حافظه‌ی چت پیوی، چون context دو
-# تا فضا کاملاً متفاوته (توی گروه معمولاً سؤال کوتاه و مجزاست).
-_group_chat_history: dict[int, list] = {}
-
 
 def _strip_hexi_trigger(text: str) -> str | None:
     """اگه پیام با یکی از اسم‌های Hexi شروع بشه (و بعدش حرف دیگه‌ای نچسبیده باشه -
@@ -144,8 +203,6 @@ def _strip_hexi_trigger(text: str) -> str | None:
         if not lower.startswith(trigger):
             continue
         next_char = stripped[len(trigger):len(trigger) + 1]
-        # اگه بعد از اسم بلافاصله یه حرف/عدد دیگه چسبیده (نه فاصله/علامت/پایان
-        # رشته)، یعنی این یه کلمه‌ی دیگه‌ست (مثل Hexinator)، نه صدازدنِ Hexi.
         if next_char and (next_char.isalnum() or next_char == "‌"):
             continue
         rest = stripped[len(trigger):].lstrip(" ,،:؛-").strip()
@@ -154,7 +211,7 @@ def _strip_hexi_trigger(text: str) -> str | None:
 
 
 async def hexi_group_trigger(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """وقتی داخل گروه با «Hexi» یا «هگزی» صداش بزنن، جواب می‌ده. برای پیام‌هایی
+    """وقتی داخل گروه با «Hexi»/«هگزی» صداش بزنن (متن)، جواب می‌ده. برای پیام‌هایی
     که خطاب به Hexi نیستن، بی‌صدا هیچ کاری نمی‌کنه (نه تماس با AI، نه هزینه)."""
     message = update.effective_message
     if not message or not message.text:
@@ -162,54 +219,80 @@ async def hexi_group_trigger(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     question = _strip_hexi_trigger(message.text)
     if question is None:
-        return  # این پیام اصلاً خطاب به Hexi نبود - بی‌خیال، بذار عادی پردازش بشه
+        return
 
     if not AI_ENABLED:
         return
 
     user = update.effective_user
-    today = _today()
-    used = db.get_ai_daily_usage(user.id, today)
-    if used >= AI_DAILY_MESSAGE_LIMIT:
-        await message.reply_text(f"📊 {user.first_name} سهمیه‌ی امروزت تموم شده. فردا دوباره صدام کن.")
-        return
-
-    if is_rate_limited(f"aichat_{user.id}", max_attempts=AI_CHAT_RATE_LIMIT_MAX,
-                        window_seconds=AI_CHAT_RATE_LIMIT_WINDOW):
-        return  # توی گروه بی‌سروصدا نادیده می‌گیریم، پیام «صبر کن» اسپم می‌شه
+    block_msg = _check_quota_and_rate(user.id)
+    if block_msg:
+        if "سهمیه" in block_msg:
+            await message.reply_text(f"📊 {user.first_name} سهمیه‌ی امروزت تموم شده. فردا دوباره صدام کن.")
+        return  # برای rate-limit توی گروه بی‌سروصدا نادیده می‌گیریم، پیام اسپم می‌شه
 
     if not question:
         question = "سلام! چیزی نگفتی، چیکار می‌تونم برات بکنم؟"
 
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
+    key = f"{update.effective_chat.id}:{user.id}"
+    user_prompt = f"[کاربر: {user.first_name or user.username or 'کاربر'}] {question}"
+    reply = await _run_hexi(user, user_prompt, _group_chat_history, key, system_prompt=GROUP_CHAT_SYSTEM_PROMPT)
+    await message.reply_text(reply)
+
+
+async def hexi_group_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """توی گروه، وقتی یه ویس رو مستقیم روی پیام خودِ Hexi ریپلای کنن (چون گفتن
+    «Hexi» با صدا قابل‌اعتماد تشخیص داده نمی‌شه، این معادلِ صدازدنِ Hexi با ویس‌ه)."""
+    message = update.effective_message
+    if not message or not message.voice:
+        return
+    reply_to = message.reply_to_message
+    if not reply_to or not reply_to.from_user or reply_to.from_user.id != context.bot.id:
+        return  # این ویس خطاب به Hexi نبود (ریپلای به پیام یه آدم دیگه بوده)
+
+    if not AI_ENABLED:
+        return
+
+    user = update.effective_user
+    block_msg = _check_quota_and_rate(user.id)
+    if block_msg:
+        if "سهمیه" in block_msg:
+            await message.reply_text(f"📊 {user.first_name} سهمیه‌ی امروزت تموم شده.")
+        return
+
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
+    text = await transcribe_voice_file(context, message.voice)
+    if not text:
+        await message.reply_text("🎙 نتونستم صداتو تشخیص بدم.")
+        return
 
     key = f"{update.effective_chat.id}:{user.id}"
-    history = _group_chat_history.get(key, [])
-    user_prompt = f"[کاربر: {user.first_name or user.username or 'کاربر'}] {question}"
-    reply = await ai_chat(user_prompt, history=history, system_prompt=GROUP_CHAT_SYSTEM_PROMPT)
-
-    history = history + [{"role": "user", "content": user_prompt}, {"role": "assistant", "content": reply}]
-    _group_chat_history[key] = history[-_MAX_HISTORY * 2:]
-
-    db.increment_ai_daily_usage(user.id, today)
-    await message.reply_text(reply)
+    user_prompt = f"[کاربر: {user.first_name or user.username or 'کاربر'}] {text}"
+    reply = await _run_hexi(user, user_prompt, _group_chat_history, key, system_prompt=GROUP_CHAT_SYSTEM_PROMPT)
+    await message.reply_text(f"🎙 شنیدم: «{text}»\n\n{reply}")
+    await _maybe_reply_with_voice(update, context, reply)
 
 
 def register_ai_handlers(app):
     app.add_handler(CommandHandler("aireport", aireport_cmd, filters=filters.ChatType.GROUPS))
 
-    # صدازدن Hexi داخل گروه - بعد از فیلترهای مدیریتی (لینک/فحش/فلود/امتیاز) ثبت
-    # می‌شه (group=7) تا با اون‌ها تداخل نکنه، ولی چون فقط پیام‌هایی که واقعاً با
-    # «Hexi»/«هگزی» شروع می‌شن رو پردازش می‌کنه، عملاً برای ۹۹٪ پیام‌های گروه هیچ
-    # هزینه/تاخیری نداره.
+    # صدازدن Hexi داخل گروه (متن) - group=7: بعد از فیلترهای مدیریتی، ولی چون
+    # فقط پیام‌های واقعاً خطاب‌به‌Hexi رو پردازش می‌کنه، برای ۹۹٪ پیام‌های گروه
+    # هیچ هزینه/تاخیری نداره.
     app.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.GROUPS, hexi_group_trigger),
         group=7,
     )
+    # ویس داخل گروه، فقط وقتی ریپلای به خودِ Hexi باشه
+    app.add_handler(
+        MessageHandler(filters.VOICE & filters.ChatType.GROUPS, hexi_group_voice),
+        group=7,
+    )
 
-    # این باید آخرین هندلر متنیِ پیوی توی همین گروه (group=0) باشه، تا فقط وقتی
-    # هیچ مکالمه/دستور دیگه‌ای (شاپ، پنل کاربر، پنل ادمین، ...) پیام رو نگرفت، اجرا بشه.
+    # پیوی: متن (fallback، آخرین هندلر متنی) و ویس
     app.add_handler(MessageHandler(
         filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE,
         ai_private_chat,
     ))
+    app.add_handler(MessageHandler(filters.VOICE & filters.ChatType.PRIVATE, ai_private_voice))
