@@ -10,6 +10,7 @@
 """
 import logging
 import os
+import base64
 import time as _time
 
 from telegram import Update
@@ -17,7 +18,7 @@ from telegram.ext import ContextTypes, filters, CommandHandler, MessageHandler
 
 import database as db
 from config import AI_ENABLED, AI_CHAT_RATE_LIMIT_MAX, AI_CHAT_RATE_LIMIT_WINDOW, AI_DAILY_MESSAGE_LIMIT
-from utils.ai_client import ai_chat, ai_group_report, NOT_CONFIGURED_MSG, GROUP_CHAT_SYSTEM_PROMPT
+from utils.ai_client import ai_chat, ai_vision, ai_group_report, NOT_CONFIGURED_MSG, GROUP_CHAT_SYSTEM_PROMPT
 from utils.ratelimit import is_rate_limited
 from utils.permissions import require_admin
 from handlers.voicetotext import transcribe_voice_file, synthesize_speech_to_file
@@ -48,10 +49,14 @@ def _check_quota_and_rate(user_id: int) -> str | None:
 
 
 async def _run_hexi(user, question: str, history_store: dict, history_key, system_prompt: str) -> str:
-    """تماس اصلی با AI + مدیریت تاریخچه + افزایش شمارنده‌ی سهمیه. فرض می‌کنه
-    _check_quota_and_rate از قبل چک شده. خروجی: متن پاسخ."""
+    """تماس اصلی با AI + مدیریت تاریخچه‌ی کوتاه‌مدت + حافظه‌ی بلندمدت + افزایش
+    شمارنده‌ی سهمیه. فرض می‌کنه _check_quota_and_rate از قبل چک شده. خروجی: متن پاسخ."""
     history = history_store.get(history_key, [])
-    reply = await ai_chat(question, history=history, system_prompt=system_prompt)
+    existing_memory = db.get_user_memory(user.id)
+    reply, new_memory = await ai_chat(question, history=history, system_prompt=system_prompt,
+                                       user_memory=existing_memory)
+    if new_memory:
+        db.set_user_memory(user.id, new_memory)
     history = history + [{"role": "user", "content": question}, {"role": "assistant", "content": reply}]
     history_store[history_key] = history[-_MAX_HISTORY * 2:]
     db.increment_ai_daily_usage(user.id, _today())
@@ -274,6 +279,74 @@ async def hexi_group_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await _maybe_reply_with_voice(update, context, reply)
 
 
+async def _download_photo_base64(context, photo) -> str:
+    """بزرگ‌ترین سایز عکس رو دانلود می‌کنه و base64ِ محتواش رو برمی‌گردونه."""
+    tg_file = await context.bot.get_file(photo.file_id)
+    file_bytes = await tg_file.download_as_bytearray()
+    return base64.b64encode(bytes(file_bytes)).decode("ascii")
+
+
+async def ai_private_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """پیوی: کاربر یه عکس برای Hexi می‌فرسته تا تحلیلش کنه/نظر بده - فقط تحلیل،
+    هیچ‌وقت عکس نمی‌سازه. عمداً وارد حافظه‌ی مکالمه نمی‌شه (base64 عکس خیلی بزرگه
+    و اگه بمونه، هزینه‌ی همه‌ی پیام‌های بعدی رو منفجر می‌کنه)."""
+    if not AI_ENABLED:
+        return
+    user = update.effective_user
+    photos = update.effective_message.photo
+    if not photos:
+        return
+
+    if not db.is_known_group_member(user.id):
+        await update.effective_message.reply_text(
+            "🔒 این قابلیت فقط برای اعضای گروه‌هایی هست که این ربات توشونه."
+        )
+        return
+
+    block_msg = _check_quota_and_rate(user.id)
+    if block_msg:
+        await update.effective_message.reply_text(block_msg)
+        return
+
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
+    image_b64 = await _download_photo_base64(context, photos[-1])
+    question = update.effective_message.caption or ""
+    reply = await ai_vision(question, image_b64)
+    db.increment_ai_daily_usage(user.id, _today())
+    await update.effective_message.reply_text(reply)
+
+
+async def hexi_group_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """توی گروه، وقتی یه عکس رو با ریپلای به پیام خودِ Hexi بفرستن (همون قرارداد
+    ویس رو برای عکس هم رعایت می‌کنیم)، یا مستقیم با کپشنی که با Hexi/هگزی شروع بشه."""
+    message = update.effective_message
+    if not message or not message.photo:
+        return
+
+    reply_to = message.reply_to_message
+    addressed_via_reply = bool(reply_to and reply_to.from_user and reply_to.from_user.id == context.bot.id)
+    caption_question = _strip_hexi_trigger(message.caption) if message.caption else None
+    if not addressed_via_reply and caption_question is None:
+        return  # این عکس خطاب به Hexi نبود
+
+    if not AI_ENABLED:
+        return
+
+    user = update.effective_user
+    block_msg = _check_quota_and_rate(user.id)
+    if block_msg:
+        if "سهمیه" in block_msg:
+            await message.reply_text(f"📊 {user.first_name} سهمیه‌ی امروزت تموم شده.")
+        return
+
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
+    image_b64 = await _download_photo_base64(context, message.photo[-1])
+    question = caption_question or ""
+    reply = await ai_vision(question, image_b64, system_prompt=GROUP_CHAT_SYSTEM_PROMPT)
+    db.increment_ai_daily_usage(user.id, _today())
+    await message.reply_text(reply)
+
+
 def register_ai_handlers(app):
     app.add_handler(CommandHandler("aireport", aireport_cmd, filters=filters.ChatType.GROUPS))
 
@@ -289,10 +362,16 @@ def register_ai_handlers(app):
         MessageHandler(filters.VOICE & filters.ChatType.GROUPS, hexi_group_voice),
         group=7,
     )
+    # عکس داخل گروه (ریپلای به Hexi، یا کپشنی که با Hexi/هگزی شروع بشه)
+    app.add_handler(
+        MessageHandler(filters.PHOTO & filters.ChatType.GROUPS, hexi_group_photo),
+        group=7,
+    )
 
-    # پیوی: متن (fallback، آخرین هندلر متنی) و ویس
+    # پیوی: متن (fallback، آخرین هندلر متنی)، ویس، و عکس
     app.add_handler(MessageHandler(
         filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE,
         ai_private_chat,
     ))
     app.add_handler(MessageHandler(filters.VOICE & filters.ChatType.PRIVATE, ai_private_voice))
+    app.add_handler(MessageHandler(filters.PHOTO & filters.ChatType.PRIVATE, ai_private_photo))

@@ -10,6 +10,13 @@ from pathlib import Path
 from config import DB_PATH
 
 SCHEMA = """
+-- حافظه‌ی بلندمدت هوش مصنوعی برای هر کاربر (خلاصه‌ی کوتاه، نه کل تاریخچه‌ی مکالمه)
+CREATE TABLE IF NOT EXISTS user_ai_memory (
+    user_id     INTEGER PRIMARY KEY,
+    memory      TEXT,
+    updated_at  INTEGER
+);
+
 -- سهمیه‌ی روزانه‌ی استفاده از هوش مصنوعی برای هر کاربر (کنترل هزینه)
 CREATE TABLE IF NOT EXISTS ai_daily_usage (
     user_id       INTEGER NOT NULL,
@@ -336,6 +343,24 @@ def is_known_group_member(user_id: int) -> bool:
     with get_conn() as conn:
         row = conn.execute("SELECT 1 FROM users WHERE user_id=? LIMIT 1", (user_id,)).fetchone()
         return row is not None
+
+
+def get_user_memory(user_id: int) -> str:
+    """خلاصه‌ی حافظه‌ی بلندمدتِ این کاربر رو برمی‌گردونه (رشته‌ی خالی اگه هنوز چیزی
+    ذخیره نشده). این همون چیزیه که هر بار به مدل داده می‌شه تا «یادش بیاد» این
+    کاربر کیه، علایقش چیه، آخرین بار درباره‌ی چی گفتگو کردن."""
+    with get_conn() as conn:
+        row = conn.execute("SELECT memory FROM user_ai_memory WHERE user_id=?", (user_id,)).fetchone()
+        return row["memory"] if row and row["memory"] else ""
+
+
+def set_user_memory(user_id: int, memory: str):
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT INTO user_ai_memory (user_id, memory, updated_at) VALUES (?, ?, ?)
+               ON CONFLICT(user_id) DO UPDATE SET memory=excluded.memory, updated_at=excluded.updated_at""",
+            (user_id, memory[:500], int(time.time())),
+        )
 
 
 def get_ai_daily_usage(user_id: int, day: str) -> int:
