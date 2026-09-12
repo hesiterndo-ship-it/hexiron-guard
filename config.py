@@ -339,6 +339,12 @@ LIARA_AI_BASE_URL = _str_env("LIARA_AI_BASE_URL", "https://ai.liara.ir/api/v1").
 # مدل استفاده‌شده برای چت آزاد (کیفیت بالاتر، هزینه بیشتر)
 AI_CHAT_MODEL = _str_env("AI_CHAT_MODEL", "qwen/qwen3.7-flash")
 
+# مدلی که فقط برای تحلیل عکس (بینایی) استفاده می‌شه - جدا از AI_CHAT_MODEL، چون
+# ارزون‌ترین مدل‌ها معمولاً بینایی ندارن. چون تحلیل عکس نسبت به چت معمولی خیلی
+# کمتر استفاده می‌شه، می‌تونیم اینجا یه مدل کمی گرون‌تر ولی بینایی‌دار بذاریم،
+# بدون اینکه هزینه‌ی کلی رو زیاد کنه.
+AI_VISION_MODEL = _str_env("AI_VISION_MODEL", "google/gemini-3.5-flash")
+
 # مدل استفاده‌شده برای تشخیص توهین/فحش و خلاصه‌سازی گزارش (سریع‌تر و ارزون‌تر)
 AI_FAST_MODEL = _str_env("AI_FAST_MODEL", "qwen/qwen3.7-flash")
 

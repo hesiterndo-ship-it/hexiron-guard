@@ -48,19 +48,35 @@ def _check_quota_and_rate(user_id: int) -> str | None:
     return None
 
 
-async def _run_hexi(user, question: str, history_store: dict, history_key, system_prompt: str) -> str:
+async def _run_hexi(user, question: str, history_store: dict, history_key, system_prompt: str) -> tuple[str, str | None]:
     """تماس اصلی با AI + مدیریت تاریخچه‌ی کوتاه‌مدت + حافظه‌ی بلندمدت + افزایش
-    شمارنده‌ی سهمیه. فرض می‌کنه _check_quota_and_rate از قبل چک شده. خروجی: متن پاسخ."""
+    شمارنده‌ی سهمیه. فرض می‌کنه _check_quota_and_rate از قبل چک شده.
+    خروجی: (متن پاسخ, دستورِ [ACTION] برای رله به گروه یا None - فقط توی
+    system_prompt های گروهی ممکنه غیر None باشه)."""
     history = history_store.get(history_key, [])
     existing_memory = db.get_user_memory(user.id)
-    reply, new_memory = await ai_chat(question, history=history, system_prompt=system_prompt,
-                                       user_memory=existing_memory)
+    reply, new_memory, action = await ai_chat(question, history=history, system_prompt=system_prompt,
+                                               user_memory=existing_memory)
     if new_memory:
         db.set_user_memory(user.id, new_memory)
     history = history + [{"role": "user", "content": question}, {"role": "assistant", "content": reply}]
     history_store[history_key] = history[-_MAX_HISTORY * 2:]
     db.increment_ai_daily_usage(user.id, _today())
-    return reply
+    return reply, action
+
+
+async def _relay_action(update: Update, context: ContextTypes.DEFAULT_TYPE, action: str | None):
+    """اگه Hexi تشخیص داد کاربر یه کار مربوط به یکی از ربات‌های دیگه‌ی گروه
+    می‌خواد (پخش آهنگ، بازی و ...)، همون دستور رو به‌عنوان یه پیام جدید توی گروه
+    می‌فرسته تا ربات مربوطه (که خودش عضو گروهه) بگیرتش و اجرا کنه.
+    ⚠️ این مکانیزم آزمایشیه - حتماً زنده تست بشه، چون بستگی داره اون ربات‌ها
+    واقعاً پیام‌های ربات‌های دیگه رو هم پردازش کنن یا نه."""
+    if not action:
+        return
+    try:
+        await context.bot.send_message(chat_id=update.effective_chat.id, text=action)
+    except Exception:
+        logger.exception("رله‌ی دستور [ACTION]=%r به گروه شکست خورد", action)
 
 
 async def _maybe_reply_with_voice(update: Update, context: ContextTypes.DEFAULT_TYPE, reply_text: str):
@@ -104,7 +120,7 @@ async def ai_private_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
-    reply = await _run_hexi(user, text, _chat_history, user.id, system_prompt=None)
+    reply, _action = await _run_hexi(user, text, _chat_history, user.id, system_prompt=None)
     await update.effective_message.reply_text(reply)
 
 
@@ -138,7 +154,7 @@ async def ai_private_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.effective_message.reply_text("🎙 نتونستم صداتو تشخیص بدم. یه‌بار دیگه و واضح‌تر بگو.")
         return
 
-    reply = await _run_hexi(user, text, _chat_history, user.id, system_prompt=_private_prompt())
+    reply, _action = await _run_hexi(user, text, _chat_history, user.id, system_prompt=_private_prompt())
     await update.effective_message.reply_text(f"🎙 شنیدم: «{text}»\n\n{reply}")
     await _maybe_reply_with_voice(update, context, reply)
 
@@ -242,8 +258,9 @@ async def hexi_group_trigger(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
     key = f"{update.effective_chat.id}:{user.id}"
     user_prompt = f"[کاربر: {user.first_name or user.username or 'کاربر'}] {question}"
-    reply = await _run_hexi(user, user_prompt, _group_chat_history, key, system_prompt=GROUP_CHAT_SYSTEM_PROMPT)
+    reply, action = await _run_hexi(user, user_prompt, _group_chat_history, key, system_prompt=GROUP_CHAT_SYSTEM_PROMPT)
     await message.reply_text(reply)
+    await _relay_action(update, context, action)
 
 
 async def hexi_group_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -274,9 +291,10 @@ async def hexi_group_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     key = f"{update.effective_chat.id}:{user.id}"
     user_prompt = f"[کاربر: {user.first_name or user.username or 'کاربر'}] {text}"
-    reply = await _run_hexi(user, user_prompt, _group_chat_history, key, system_prompt=GROUP_CHAT_SYSTEM_PROMPT)
+    reply, action = await _run_hexi(user, user_prompt, _group_chat_history, key, system_prompt=GROUP_CHAT_SYSTEM_PROMPT)
     await message.reply_text(f"🎙 شنیدم: «{text}»\n\n{reply}")
     await _maybe_reply_with_voice(update, context, reply)
+    await _relay_action(update, context, action)
 
 
 async def _download_photo_base64(context, photo) -> str:

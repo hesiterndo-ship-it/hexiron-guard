@@ -19,7 +19,7 @@ import re
 
 import aiohttp
 
-from config import LIARA_AI_API_KEY, LIARA_AI_BASE_URL, AI_CHAT_MODEL, AI_FAST_MODEL, AI_FALLBACK_MODELS, AI_ENABLED
+from config import LIARA_AI_API_KEY, LIARA_AI_BASE_URL, AI_CHAT_MODEL, AI_FAST_MODEL, AI_VISION_MODEL, AI_FALLBACK_MODELS, AI_ENABLED
 
 logger = logging.getLogger(__name__)
 
@@ -52,8 +52,21 @@ CHAT_SYSTEM_PROMPT = (
 GROUP_CHAT_SYSTEM_PROMPT = CHAT_SYSTEM_PROMPT + (
     "\n\nتوجه: این پیام داخل یک گروه تلگرامیه، نه پیوی؛ چند نفر مختلف ممکنه با تو "
     "حرف بزنن. اسم کسی که الان صدات کرده رو توی پیام کاربر می‌بینی - می‌تونی بهش "
-    "اشاره کنی، ولی لازم نیست هر بار حتماً اسمش رو تکرار کنی."
+    "اشاره کنی، ولی لازم نیست هر بار حتماً اسمش رو تکرار کنی.\n\n"
+    "ابزارهای دیگه: توی همین گروه، چند ربات دیگه هم هستن که با دستورهای خودشون "
+    "کار می‌کنن. اگه (و فقط اگه) کاربر واقعاً و به‌وضوح یکی از این کارها رو خواسته "
+    "بود، در انتهای پاسخت (بعد از خط MEMORY) یک خط جدا و مستقل دقیقاً به این فرم "
+    "اضافه کن: [ACTION: <دستور>]\n"
+    "دستور باید *دقیقاً* یکی از این‌ها باشه (با آرگومان بعدش اگه لازمه)، نه چیز دیگه‌ای:\n"
+    "  /play <اسم آهنگ> -> پخش آهنگ توی ویس‌چت\n"
+    "  /pause, /resume, /skip, /stop, /queue -> کنترل پخش آهنگ\n"
+    "  /games -> نشون‌دادن لیست بازی‌های گروه\n"
+    "  /profile -> نمایش پروفایل بازی کاربر\n"
+    "  /top -> نمایش برترین‌های بازی\n"
+    "  /daily -> جایزه‌ی روزانه‌ی بازی\n"
+    "اگه هیچ‌کدوم مرتبط نبود، اصلاً این خط رو ننویس (نه حتی خالی)."
 )
+
 
 _LEAK_PATTERNS = [
     re.compile(r"sk-[a-zA-Z0-9]{10,}"),
@@ -75,6 +88,33 @@ def _extract_memory(text: str) -> tuple[str, str | None]:
     memory = match.group(1).strip()
     clean = text[:match.start()].rstrip()
     return clean, (memory or None)
+
+
+_ACTION_TAG_RE = re.compile(r"\[ACTION:\s*(.*?)\]\s*$", re.DOTALL | re.IGNORECASE)
+
+# فقط دستورهایی که با یکی از این پیشوندها شروع بشن مجازن - حتی اگه مدل چیز
+# دیگه‌ای توی تگ [ACTION: ...] بذاره (باگ مدل یا پرامپت‌اینجکشن از سمت یه کاربر
+# مغرض)، اینجا فیلتر می‌شه و کاملاً نادیده گرفته می‌شه. این جلوی این رو می‌گیره
+# که Hexi هر متن دلخواهی رو به‌عنوان «دستور» به گروه پست کنه.
+_ALLOWED_ACTION_PREFIXES = (
+    "/play", "/pause", "/resume", "/skip", "/stop", "/queue",
+    "/games", "/profile", "/top", "/daily",
+)
+
+
+def _extract_action(text: str) -> tuple[str, str | None]:
+    """متن خام مدل رو می‌گیره (بعد از جداکردنِ MEMORY)، اگه خط [ACTION: ...]
+    آخرش بود و دستور داخلش توی وایت‌لیست بود، جداش می‌کنه. خروجی:
+    (متنِ تمیز, دستورِ مجاز یا None)."""
+    match = _ACTION_TAG_RE.search(text)
+    if not match:
+        return text, None
+    action = match.group(1).strip()
+    clean = text[:match.start()].rstrip()
+    if not action.startswith(_ALLOWED_ACTION_PREFIXES):
+        logger.warning("دستور [ACTION] خارج از وایت‌لیست نادیده گرفته شد: %r", action)
+        return clean, None
+    return clean, action
 
 
 def _sanitize(text: str) -> str:
@@ -136,13 +176,15 @@ async def _call_chat(model: str, messages: list, temperature: float = 0.7, max_t
 
 
 async def ai_chat(user_message: str, history: list | None = None, system_prompt: str | None = None,
-                   user_memory: str | None = None) -> tuple[str, str | None]:
+                   user_memory: str | None = None) -> tuple[str, str | None, str | None]:
     """چت آزاد. history اختیاریه: لیستی از {'role': 'user'|'assistant', 'content': str}.
     system_prompt اختیاریه - اگه ندی، همون CHAT_SYSTEM_PROMPT معمولی (پیوی) استفاده می‌شه.
     user_memory اختیاریه: خلاصه‌ی حافظه‌ی قبلیِ این کاربر (اگه داری) تا مدل بدونه قبلاً چی گفتید.
-    خروجی: (متنِ پاسخ برای نمایش, خلاصه‌ی به‌روزشده‌ی حافظه یا None اگه مدل چیزی برنگردوند)."""
+    خروجی: (متنِ پاسخ برای نمایش, خلاصه‌ی به‌روزشده‌ی حافظه یا None, دستور [ACTION] یا None -
+    این سومی فقط توی system_prompt هایی که دستورش رو می‌دن (یعنی GROUP_CHAT_SYSTEM_PROMPT)
+    ممکنه غیر None باشه)."""
     if not AI_ENABLED:
-        return NOT_CONFIGURED_MSG, None
+        return NOT_CONFIGURED_MSG, None, None
 
     messages = [{"role": "system", "content": system_prompt or CHAT_SYSTEM_PROMPT}]
     if user_memory:
@@ -155,11 +197,12 @@ async def ai_chat(user_message: str, history: list | None = None, system_prompt:
 
     try:
         raw = await _call_chat(AI_CHAT_MODEL, messages, temperature=0.8, max_tokens=1024)
-        clean, memory = _extract_memory(raw)
-        return (_sanitize(clean) or "..."), memory
+        no_memory, memory = _extract_memory(raw)
+        clean, action = _extract_action(no_memory)
+        return (_sanitize(clean) or "..."), memory, action
     except Exception as e:
         logger.error(f"ai_chat failed: {e}")
-        return "😕 مشکلی توی ارتباط با هوش مصنوعی پیش اومد. یه بار دیگه امتحان کن.", None
+        return "😕 مشکلی توی ارتباط با هوش مصنوعی پیش اومد. یه بار دیگه امتحان کن.", None, None
 
 
 async def ai_vision(question: str, image_base64: str, mime_type: str = "image/jpeg",
@@ -183,7 +226,7 @@ async def ai_vision(question: str, image_base64: str, mime_type: str = "image/jp
     })
 
     try:
-        content = await _call_chat(AI_CHAT_MODEL, messages, temperature=0.6, max_tokens=800)
+        content = await _call_chat(AI_VISION_MODEL, messages, temperature=0.6, max_tokens=800)
         return _sanitize(content) or "..."
     except Exception as e:
         logger.error(f"ai_vision failed: {e}")
