@@ -154,7 +154,12 @@ async def _call_one_model(model: str, messages: list, temperature: float, max_to
     return content.strip()
 
 
-_RETRYABLE_MARKERS = ("503", "provider_unavailable", "429", "rate_limit", "overloaded", "temporarily unavailable")
+_RETRYABLE_MARKERS = (
+    "503", "provider_unavailable", "429", "rate_limit", "overloaded", "temporarily unavailable",
+    # وقتی خودِ اسم مدل اشتباه/منسوخ‌شده باشه (نه کل حساب)، باید مدل بعدی توی
+    # AI_FALLBACK_MODELS امتحان بشه - این خطا فقط مخصوص همون یک مدله، نه بقیه.
+    "must be one of", "model_not_found", "does not exist",
+)
 
 
 async def _call_chat(model: str, messages: list, temperature: float = 0.7, max_tokens: int = 1024) -> str:
