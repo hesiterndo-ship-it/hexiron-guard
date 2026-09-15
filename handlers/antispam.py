@@ -49,13 +49,16 @@ _recent_messages: dict[tuple[int, int], deque] = defaultdict(
 _last_sub_notice: dict[int, float] = {}
 
 # دستوراتی که حتی بدون اشتراک هم باید کار کنن (برای این‌که گروه بتونه اشتراک بخره)
-ALWAYS_ALLOWED_COMMANDS = {"/start", "/groupid"}
+ALWAYS_ALLOWED_COMMANDS = {"/start", "/groupid", "/grouplink"}
+
+# معادل فارسیِ همون دستورهای بالا (بدون اسلش) - اینا هم باید حتی بدون اشتراک کار کنن
+ALWAYS_ALLOWED_TEXT_PHRASES = {"آیدی گروه", "ایدی گروه", "شناسه گروه", "لینک گروه", "لینک دعوت"}
 
 
 async def enforce_subscription_gate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """اگه گروه لایسنس فعال نداشته باشه (طبق ربات مرکزی فروش)، هیچ خدمتی
-    (به‌جز /start و /groupid) اجرا نمی‌شه. این باید زودتر از همه‌ی هندلرهای
-    دیگه ثبت بشه (group=-10 توی main.py)."""
+    (به‌جز /start، /groupid، /grouplink و معادل‌های فارسیشون) اجرا نمی‌شه. این باید
+    زودتر از همه‌ی هندلرهای دیگه ثبت بشه (group=-10 توی main.py)."""
     chat = update.effective_chat
     message = update.effective_message
     if chat is None or chat.type == "private":
@@ -64,10 +67,13 @@ async def enforce_subscription_gate(update: Update, context: ContextTypes.DEFAUL
         return
 
     text = (message.text if message else "") or ""
-    if text.startswith("/"):
-        command = text.strip().split()[0].split("@")[0].lower()
+    stripped = text.strip()
+    if stripped.startswith("/"):
+        command = stripped.split()[0].split("@")[0].lower()
         if command in ALWAYS_ALLOWED_COMMANDS:
             return
+    elif stripped.lower() in ALWAYS_ALLOWED_TEXT_PHRASES:
+        return
 
     now = time.time()
     last = _last_sub_notice.get(chat.id, 0)

@@ -8,7 +8,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 import database as db
 from utils.ffmpeg_setup import ensure_ffmpeg
 from config import BOT_TOKEN, PROXY_URL
-from handlers import admin, antispam, general, welcome, dashboard, ticket, force_subscribe, reactions, reports, backup, security, polls, whisper, voicetotext, invite_links, ai_chat
+from handlers import admin, antispam, general, welcome, dashboard, ticket, force_subscribe, reactions, reports, backup, security, polls, voicetotext, invite_links, ai_chat
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -103,7 +103,7 @@ def build_application() -> Application:
     polls.register_poll_handlers(app)
     
     # ===== سیستم نجوا (Whisper) =====
-    whisper.register_whisper_handlers(app)
+    # (سیستم نجوا از این ربات حذف شد - حالا یه ربات جدا و اختصاصی برای نجوا دارید: hexiron-whisper)
     
     # ===== تبدیل صدا به متن =====
     voicetotext.register_voicetotext_handlers(app)
@@ -211,6 +211,12 @@ async def handle_text_commands(update: Update, context: ContextTypes.DEFAULT_TYP
         raise ApplicationHandlerStop
     elif text_lower in ["rules", "قوانین"]:
         await general.rules(update, context)
+        raise ApplicationHandlerStop
+    elif text_lower in ["groupid", "آیدی گروه", "ایدی گروه", "شناسه گروه"]:
+        await general.groupid_cmd(update, context)
+        raise ApplicationHandlerStop
+    elif text_lower in ["grouplink", "لینک گروه", "لینک دعوت"]:
+        await general.grouplink_cmd(update, context)
         raise ApplicationHandlerStop
     elif text_lower in ["stats", "آمار"]:
         await general.stats(update, context)
@@ -417,17 +423,6 @@ async def handle_text_commands(update: Update, context: ContextTypes.DEFAULT_TYP
         raise ApplicationHandlerStop
     elif text_lower in ["closepoll", "بستن نظرسنجی"]:
         await polls.close_poll(update, context)
-        raise ApplicationHandlerStop
-    
-    # ===== سیستم نجوا (Whisper) =====
-    elif text_lower in ["whisper", "نجوا"]:
-        await whisper.whisper(update, context)
-        raise ApplicationHandlerStop
-    elif text_lower in ["secret", "رمزی"]:
-        await whisper.secret(update, context)
-        raise ApplicationHandlerStop
-    elif text_lower in ["mywhispers", "نجواهای من"]:
-        await whisper.mywhispers(update, context)
         raise ApplicationHandlerStop
     
     # ===== تبدیل صدا به متن =====
